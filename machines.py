@@ -3,6 +3,7 @@ from pygestalt import utilities
 from pygestalt.utilities import notice as notice
 from pygestalt.publish import publish
 import math
+import numpy
 import copy
 import threading
 import inspect
@@ -331,6 +332,110 @@ class kinematics():
 				transformedOutput += self.arrays[index].transform(input)
 			return transformedOutput
 	
+	# Bottom               length = D
+	#         /\ A          
+	#        /  \           ^ x
+	#       /    \          |
+	#      /      \         |
+	#     /   o    \        o ---- > 
+	#    /          \             y  
+	#   /            \
+	#   --------------
+	#  C              B
+
+	#---Inherited from matrix class but not real matrix----
+	class deltaForwardTransform(matrix):
+		'''Customized transform from axes input vector to delta hair-milling coordinate'''
+		def __init__(self, L, r, rh, Lt, D):
+			self.L = L #length of rod
+			self.r = r #radius of iron ball
+			self.rh = rh #diameter of your head
+			self.Lt = Lt #length of tool-to-ball 
+			self.D = D #side length of bottom triangle
+
+			self.Ax = math.sqrt(3)/3 * D
+			self.Ay = 0
+
+			self.Bx = -math.sqrt(3)/6 * D
+			self.By = 1/2 * D
+
+			self.Cx = -math.sqrt(3)/6 * D
+			self.Cy = -1/2 * D
+
+		def transform(self, inputVector):
+			if len(inputVector) != 3: #check to make sure that vectors match
+				notice(self, 'vector length mismatch')
+				return False
+
+			Az = inputVector[0]
+			Bz = inputVector[1]
+			Cz = inputVector[2]
+
+			P1 = numpy.array([self.Ax, self.Ay, Az])
+			P2 = numpy.array([self.Bx, self.By, Bz])
+			P3 = numpy.array([self.Cx, self.Cy, Cz])
+
+			ex = (P2 - P1)/(numpy.linalg.norm(P2 - P1))
+			i = numpy.dot(ex, P3 - P1)
+			ey = (P3 - P1 - i*ex)/(numpy.linalg.norm(P3 - P1 - i*ex))
+			ez = numpy.cross(ex,ey)
+			d = numpy.linalg.norm(P2 - P1)
+			j = numpy.dot(ey, P3 - P1)
+
+			xr = (pow((self.L+self.r),2) - pow((self.L+self.r),2) + pow(d,2))/(2*d)
+			yr = ((pow((self.L+self.r),2) - pow((self.L+self.r),2) + pow(i,2) + pow(j,2))/(2*j)) - ((i/j)*x)
+			zr = numpy.sqrt(pow((self.L+self.r),2) - pow(x,2) - pow(y,2))
+
+			scale = self.rh / ( self.rh + self.Lt + self.r ) #scaling from iron ball to tool position
+
+			x = scale * xr
+			y = scale * yr
+			z = scale * zr
+
+			return [x,y]
+
+
+	#---Inherited from matrix class but not real matrix----
+	class deltaReverseTransform(matrix):
+		'''Customized transform from delta hair-milling coordinate to axes output vector'''
+		def __init__(self, L, r, rh, Lt, D):
+			self.L = L #length of rod
+			self.r = r #radius of iron ball
+			self.rh = rh #radius of your head
+			self.Lt = Lt #length of tool
+			self.D = D #side length of bottom triangle
+
+			self.Ax = math.sqrt(3)/3 * D
+			self.Ay = 0
+
+			self.Bx = -math.sqrt(3)/6 * D
+			self.By = 1/2 * D
+
+			self.Cx = -math.sqrt(3)/6 * D
+			self.Cy = -1/2 * D
+
+		def transform(self, inputVector):
+			# Only x,y allowed within inputVector
+			if len(inputVector) != 2: #check to make sure that vectors match
+				notice(self, 'vector length mismatch')
+				return False
+
+			x = inputVector[0]
+			y = inputVector[1]
+			z = math.sqrt(r**2 - x**2 - y**2)
+
+			scale = ( self.rh + self.Lt + self.r ) / self.rh #scaling from tool position to iron ball position
+
+			xr = scale * x
+			yr = scale * y
+			zr = scale * z
+
+			Az = zr - math.sqrt( (self.L+self.r)**2 - (xr-self.Ax)**2 - (yr-self.Ay)**2 )
+			Bz = zr - math.sqrt( (self.L+self.r)**2 - (xr-self.Bx)**2 - (yr-self.By)**2 )
+			Cz = zr - math.sqrt( (self.L+self.r)**2 - (xr-self.Cx)**2 - (yr-self.Cy)**2 )
+
+			return [Az, Bz, Cz]
+
 	
 	class transform(object):
 		'''Contains methods for transforming in the forwards and reverse directions.'''
@@ -366,7 +471,13 @@ class kinematics():
 			
 			self.forwardMatrix = kinematics.matrix([[0.5*invertX,0.5*invertX],[0.5*invertY,-0.5*invertY]])
 			self.reverseMatrix = kinematics.matrix([[1*invertX, 1*invertY], [1*invertX, -1*invertY]])
-			
+	
+	# Testing......
+	class hair_milling_delta(transform):
+		def __init__(self, L, r, Lt, D):
+			self.forwardMatrix = kinematics.deltaForwardTransform(L, r, rh, Lt, D)
+			self.reverseMatrix = kinematics.deltaReverseTransform(L, r, rh, Lt, D)
+
 	class chain(transform):
 		'''Allows a series of kinematics to be chained together.'''
 		def __init__(self, forwardChain):

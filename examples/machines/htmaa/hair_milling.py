@@ -15,6 +15,7 @@ from pygestalt.utilities import notice
 from pygestalt.publish import rpc	#remote procedure call dispatcher
 import time
 import io
+import math
 
 
 #------VIRTUAL MACHINE------
@@ -27,8 +28,8 @@ class virtualMachine(machines.virtualMachine):
 	def initControllers(self):
 		self.xAxisNode = nodes.networkedGestaltNode('X Axis', self.fabnet, filename = '086-005a.py', persistence = self.persistence)
 		self.yAxisNode = nodes.networkedGestaltNode('Y Axis', self.fabnet, filename = '086-005a.py', persistence = self.persistence)
-
-		self.xyNode = nodes.compoundNode(self.xAxisNode, self.yAxisNode)
+        self.zAxisNode = nodes.networkedGestaltNode('Z Axis', self.fabnet, filename = '086-005a.py', persistence = self.persistence)
+		self.xyzNode = nodes.compoundNode(self.xAxisNode, self.yAxisNode, self.zAxisNode)
 
 	def initCoordinates(self):
 		self.position = state.coordinate(['mm', 'mm'])
@@ -36,10 +37,12 @@ class virtualMachine(machines.virtualMachine):
 	def initKinematics(self):
 		self.xAxis = elements.elementChain.forward([elements.microstep.forward(4), elements.stepper.forward(1.8), elements.leadscrew.forward(8), elements.invert.forward(True)])
 		self.yAxis = elements.elementChain.forward([elements.microstep.forward(4), elements.stepper.forward(1.8), elements.leadscrew.forward(8), elements.invert.forward(False)])
-		self.stageKinematics = kinematics.direct(2)	#direct drive on all axes
+        self.zAxis = elements.elementChain.forward([elements.microstep.forward(4), elements.stepper.forward(1.8), elements.leadscrew.forward(8), elements.invert.forward(False)])
+
+        self.stageKinematics = kinematics.hair_milling_delta()
 
 	def initFunctions(self):
-		self.move = functions.move(virtualMachine = self, virtualNode = self.xyNode, axes = [self.xAxis, self.yAxis], kinematics = self.stageKinematics, machinePosition = self.position,planner = 'null')
+		self.move = functions.move(virtualMachine = self, virtualNode = self.xyzNode, axes = [self.xAxis, self.yAxis, self.zAxis], kinematics = self.stageKinematics, machinePosition = self.position,planner = 'null')
 		self.jog = functions.jog(self.move)	#an incremental wrapper for the move function
 		pass
 
@@ -77,7 +80,7 @@ if __name__ == '__main__':
 	#stages.xyNode.setMotorCurrent(0.7)
 
 	# This is for how fast the
-	stages.xyNode.setVelocityRequest(8)
+	stages.xyzNode.setVelocityRequest(8)
 
 	# Some random moves to test with
 	moves = [[10,10],[20,20],[10,10],[0,0]]
